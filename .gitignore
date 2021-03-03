@@ -1,2 +1,4 @@
 /target
 Cargo.lock
+/docs/statistics_helper.js
+/docs/statistics_helper_bg.wasm
