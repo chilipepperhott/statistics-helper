@@ -60,7 +60,10 @@ impl epi::App for App {
             ui.label(format!("Mean: {:.2}", self.mean));
             ui.label(format!("Median: {:.2}", self.median));
             ui.label(format!("Variance: {:.2}", self.variance));
-            ui.label(format!("Standard Deviation: {:.2}", self.standard_deviation));
+            ui.label(format!(
+                "Standard Deviation: {:.2}",
+                self.standard_deviation
+            ));
             ui.heading("Plot");
             ui.add(self.plot.clone());
         });
@@ -68,6 +71,10 @@ impl epi::App for App {
 
     fn name(&self) -> &str {
         "Statistics Helper"
+    }
+
+    fn max_size_points(&self) -> Vec2 {
+        Vec2::splat(f32::INFINITY)
     }
 }
 
