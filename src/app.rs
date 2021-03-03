@@ -8,6 +8,7 @@ pub struct App {
     median: f64,
     variance: f64,
     standard_deviation: f64,
+    is_sample: bool,
     plot: Plot,
 }
 
@@ -20,6 +21,7 @@ impl App {
             median: 0.0,
             variance: 0.0,
             standard_deviation: 0.0,
+            is_sample: false,
             plot: Plot::default(),
         }
     }
@@ -29,7 +31,12 @@ impl epi::App for App {
     fn update(&mut self, ctx: &CtxRef, frame: &mut epi::Frame<'_>) {
         // Show data entry panel
         Window::new("Data Entry").show(ctx, |ui| {
-            ui.text_edit_multiline(&mut self.data_string);
+            ui.collapsing("Click here to open text entry", |ui| {
+                ScrollArea::from_max_height(512.0).show(ui, |ui| {
+                    ui.text_edit_multiline(&mut self.data_string);
+                });
+            });
+            ui.checkbox(&mut self.is_sample, "Is sample data");
 
             if self.data_enter_err {
                 ui.add(Label::new("Could not parse data").text_color(Color32::RED));
@@ -41,7 +48,7 @@ impl epi::App for App {
                         self.data_enter_err = false;
 
                         let (data, mean, median, variation, standard_deviation) =
-                            plot_data(&d, false);
+                            plot_data(&d, self.is_sample);
 
                         self.data_enter_err = false;
                         self.plot = Plot::default().curve(Curve::from_values(data));
