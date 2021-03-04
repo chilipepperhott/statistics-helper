@@ -1,5 +1,7 @@
 CRATE_NAME=statistics_helper # assume crate name is the same as the folder name
 
+export RUSTFLAGS=--cfg=web_sys_unstable_apis
+
 # Clear output from old stuff:
 rm -f docs/${CRATE_NAME}_bg.wasm
 

@@ -1,17 +1,11 @@
-use std::collections::HashMap;
 use eframe::egui::plot::*;
 use eframe::{egui::*, epi};
+use std::collections::HashMap;
 
 #[derive(PartialEq, Copy, Clone)]
-enum XAxis{
-    Index,
-    ZScore
-}
-
-#[derive(PartialEq, Copy, Clone)]
-enum YAxis{
+pub enum XAxis {
+    ZScore,
     Value,
-    Frequency
 }
 
 pub struct App {
@@ -22,8 +16,7 @@ pub struct App {
     variance: f64,
     standard_deviation: f64,
     is_sample: bool,
-    x: XAxis,
-    y: YAxis,
+    x_axis: XAxis,
     plot: Plot,
 }
 
@@ -37,9 +30,27 @@ impl App {
             variance: 0.0,
             standard_deviation: 0.0,
             is_sample: false,
-            x: XAxis::Index,
-            y: YAxis::Value,
+            x_axis: XAxis::ZScore,
             plot: Plot::default(),
+        }
+    }
+
+    fn process_input(&mut self) {
+        match data_from_csv(&self.data_string) {
+            Ok(d) => {
+                self.data_enter_err = false;
+
+                let (data, mean, median, variation, standard_deviation) =
+                    plot_data(&d, self.is_sample, self.x_axis);
+
+                self.data_enter_err = false;
+                self.plot = Plot::default().curve(Curve::from_values(data));
+                self.mean = mean;
+                self.median = median;
+                self.variance = variation;
+                self.standard_deviation = standard_deviation;
+            }
+            Err(_) => self.data_enter_err = true,
         }
     }
 }
@@ -53,43 +64,29 @@ impl epi::App for App {
                     ui.text_edit_multiline(&mut self.data_string);
                 });
             });
-            ui.checkbox(&mut self.is_sample, "Is sample data");
+            if ui.checkbox(&mut self.is_sample, "Is sample data").changed() {
+                self.process_input();
+            }
 
-            ui.horizontal(|ui|{
-            ui.group(|ui|{
+            ui.horizontal(|ui| {
                 ui.label("X Axis:");
-                ui.radio_value(&mut self.x, XAxis::Index, "Index");
-                ui.radio_value(&mut self.x, XAxis::ZScore, "ZScore");
+                if ui
+                    .radio_value(&mut self.x_axis, XAxis::ZScore, "By Z Score")
+                    .changed()
+                    || ui
+                        .radio_value(&mut self.x_axis, XAxis::Value, "By Value")
+                        .changed()
+                {
+                    self.process_input();
+                }
             });
-
-            ui.group(|ui|{
-                ui.label("Y Axis:");
-                ui.radio_value(&mut self.y, YAxis::Frequency, "Frequency");
-                ui.radio_value(&mut self.y, YAxis::Value, "Value");
-            });
-        });
 
             if self.data_enter_err {
                 ui.add(Label::new("Could not parse data").text_color(Color32::RED));
             }
 
             if ui.button("Enter").clicked() {
-                match data_from_csv(&self.data_string) {
-                    Ok(d) => {
-                        self.data_enter_err = false;
-
-                        let (data, mean, median, variation, standard_deviation) =
-                            plot_data(&d, self.is_sample, self.x, self.y);
-
-                        self.data_enter_err = false;
-                        self.plot = Plot::default().curve(Curve::from_values(data));
-                        self.mean = mean;
-                        self.median = median;
-                        self.variance = variation;
-                        self.standard_deviation = standard_deviation;
-                    }
-                    Err(_) => self.data_enter_err = true,
-                }
+                self.process_input();
             }
         });
 
@@ -117,7 +114,7 @@ impl epi::App for App {
 }
 
 /// Plots the data, returning the points, mean, median, variance and standard deviation. If provided y axis is frequency, x is alwaus z-score
-fn plot_data(data: &Vec<f64>, is_sample: bool, x: XAxis, y: YAxis) -> (Vec<Value>, f64, f64, f64, f64) {
+fn plot_data(data: &Vec<f64>, is_sample: bool, x_axis: XAxis) -> (Vec<Value>, f64, f64, f64, f64) {
     let mut owned = data.to_owned();
     owned.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
@@ -147,22 +144,28 @@ fn plot_data(data: &Vec<f64>, is_sample: bool, x: XAxis, y: YAxis) -> (Vec<Value
 
     // Construct the final output points
     let mut output = Vec::with_capacity(data.len());
+    let frequencies = get_frequencies(owned.as_slice());
 
-    if y == YAxis::Frequency{
-        let frequencies = get_frequencies(owned.as_slice());
-
-    }else{
-        for (p, v) in data.iter().enumerate(){
-            if x == XAxis::Index{
-                output.push(Value::new(p as f64, *v));
-            }
-            else{
-                output.push(Value::new((*v as f64 - mean) / standard_deviation, *v));
-            }
+    if x_axis == XAxis::ZScore {
+        for (k, count) in frequencies {
+            output.push(Value::new(
+                z_score(f64::from_bits(k), mean, standard_deviation),
+                count as f64,
+            ));
+        }
+    } else {
+        for (k, count) in frequencies {
+            output.push(Value::new(f64::from_bits(k), count as f64));
         }
     }
 
+    output.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+
     (output, mean, median, variation, standard_deviation)
+}
+
+fn z_score(value: f64, mean: f64, standard_deviation: f64) -> f64 {
+    (value - mean) / standard_deviation
 }
 
 fn data_from_csv(data: &String) -> Result<Vec<f64>, std::num::ParseFloatError> {
@@ -184,7 +187,7 @@ fn filter(s: &String) -> String {
     let mut output = String::new();
 
     for c in s.chars() {
-        if !c.is_whitespace() && (c.is_digit(10) || c == ',' || c == '.') {
+        if !c.is_whitespace() && (c.is_digit(10) || c == ',' || c == '.' || c == '-') {
             output.push(c)
         }
     }
@@ -200,16 +203,13 @@ fn filter(s: &String) -> String {
 }
 
 /// Counts how many times a value exists in a vec, removing them as it goes
-fn get_frequencies(d: &[f64]) -> HashMap<u64, usize>{
+fn get_frequencies(d: &[f64]) -> HashMap<u64, usize> {
     let mut output: HashMap<u64, usize> = HashMap::new();
-    
-    for i in d{
+
+    for i in d {
         let bits = (*i).to_bits();
-        if output.contains_key(&bits){
-            output[&bits] += 1;
-        }else{
-            output.insert(bits, 1);
-        }
+        let count = output.entry(bits).or_insert(0);
+        *count += 1;
     }
 
     output
